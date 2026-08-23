@@ -99,4 +99,16 @@ async function getDoctorProfile(userId) {
   return profile;
 }
 
-module.exports = { myAppointments, getPreVisitSummary, submitVisitNotes };
+async function updateWorkingHours(req, res) {
+  const { doctorId } = req.params;
+  const { workingHours } = req.body;
+  if (!workingHours) throw new AppError('workingHours is required', 400);
+  // Ensure JSON string stored
+  const updated = await prisma.doctor.update({
+    where: { id: Number(doctorId) },
+    data: { workingHours: JSON.stringify(workingHours) },
+  });
+  res.json({ doctor: updated });
+}
+
+module.exports = { myAppointments, getPreVisitSummary, submitVisitNotes, updateWorkingHours };

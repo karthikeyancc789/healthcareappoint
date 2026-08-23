@@ -5,24 +5,48 @@ const { AppError } = require('../middleware/errorHandler');
 // Patients self-register. Doctor and Admin accounts are provisioned by an
 // existing Admin (see adminController) — this keeps the register endpoint
 // from being usable to self-grant elevated roles.
-async function registerPatient(req, res) {
-  const { email, password, name, phone, dob, gender } = req.body;
+async function registerUser(req, res) {
+  const { email, password, name, phone, dob, gender, role, specialisation } = req.body;
   if (!email || !password || !name) throw new AppError('email, password, and name are required');
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) throw new AppError('An account with this email already exists', 409);
 
   const passwordHash = await hashPassword(password);
+  const userRole = role || 'PATIENT';
+
+  let userData = {
+    email,
+    passwordHash,
+    name,
+    phone,
+    role: userRole,
+  };
+
+  if (userRole === 'DOCTOR') {
+    if (!specialisation) throw new AppError('Specialisation is required for doctors');
+    userData.doctorProfile = {
+      create: {
+        specialisation,
+        slotDurationMin: 30,
+        workingHours: JSON.stringify({
+          MON: ['09:00', '17:00'],
+          TUE: ['09:00', '17:00'],
+          WED: ['09:00', '17:00'],
+          THU: ['09:00', '17:00'],
+          FRI: ['09:00', '13:00'],
+        }),
+      }
+    };
+  } else if (userRole === 'PATIENT') {
+    userData.patientProfile = { 
+      create: { dob: dob ? new Date(dob) : null, gender } 
+    };
+  }
+
   const user = await prisma.user.create({
-    data: {
-      email,
-      passwordHash,
-      name,
-      phone,
-      role: 'PATIENT',
-      patientProfile: { create: { dob: dob ? new Date(dob) : null, gender } },
-    },
-    include: { patientProfile: true },
+    data: userData,
+    include: { patientProfile: true, doctorProfile: true },
   });
 
   const token = signToken(user);
@@ -60,4 +84,4 @@ function sanitizeUser(user) {
   return safe;
 }
 
-module.exports = { registerPatient, login, me };
+module.exports = { registerUser, login, me };

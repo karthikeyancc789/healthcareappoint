@@ -1,7 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
-export default function Layout({ links, children }) {
+export default function Layout({ links = [], children }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 

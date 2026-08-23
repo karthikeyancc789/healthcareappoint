@@ -15,8 +15,22 @@ const { errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
 
+// In development, Vite may land on a different port than 5173 if it's
+// already taken (5174, 5175, ...), which would otherwise break CORS every
+// time. Allow any localhost/127.0.0.1 origin in dev; stay strict to
+// FRONTEND_URL in production.
+const corsOrigin =
+    process.env.NODE_ENV === 'production'
+        ? process.env.FRONTEND_URL
+        : (origin, callback) => {
+            if (!origin || https ?: \/\/(localhost|127\.0\.0\.1):\d+$/.test(origin)) {
+                return callback(null, true);
+            }
+            callback(new Error(`Not allowed by CORS: ${origin}`));
+        };
+
 app.use(helmet());
-app.use(cors({ origin: process.env.FRONTEND_URL || '*', credentials: true }));
+app.use(cors({ origin: corsOrigin, credentials: true }));
 app.use(express.json());
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 300 })); // basic abuse protection
 

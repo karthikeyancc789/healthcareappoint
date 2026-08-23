@@ -5,7 +5,7 @@ const { startReminderJob } = require('./jobs/reminderJob');
 const { startEmailRetryJob } = require('./jobs/emailRetryJob');
 const { startSlotHoldSweepJob } = require('./jobs/slotHoldSweepJob');
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5003;
 
 app.listen(PORT, () => {
   logger.info(`Healthcare Appointment Manager API listening on port ${PORT}`);

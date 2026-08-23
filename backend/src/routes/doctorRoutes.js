@@ -9,4 +9,5 @@ router.get('/appointments', doctorController.myAppointments);
 router.get('/appointments/:appointmentId/pre-visit-summary', doctorController.getPreVisitSummary);
 router.post('/appointments/:appointmentId/visit-notes', doctorController.submitVisitNotes);
 
+router.put('/:doctorId/working-hours', doctorController.updateWorkingHours);
 module.exports = router;
