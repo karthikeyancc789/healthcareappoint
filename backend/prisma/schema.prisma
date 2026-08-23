@@ -1,0 +1,173 @@
+// Healthcare Appointment & Follow-up Manager — Database Schema
+// Provider: PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  PATIENT
+  DOCTOR
+  ADMIN
+}
+
+enum AppointmentStatus {
+  PENDING       // slot held, awaiting symptom form + confirmation
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+  DOCTOR_LEAVE  // cancelled specifically because doctor went on leave
+}
+
+enum Urgency {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum NotificationChannel {
+  EMAIL
+  CALENDAR
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  RETRYING
+}
+
+enum NotificationType {
+  BOOKING_CONFIRMATION
+  APPOINTMENT_REMINDER
+  CANCELLATION
+  DOCTOR_LEAVE_NOTICE
+  MEDICATION_REMINDER
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  role         Role
+  name         String
+  phone        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Google Calendar OAuth tokens (per user, so each side's calendar gets an event)
+  googleRefreshToken String?
+  googleAccessToken  String?
+  googleTokenExpiry  DateTime?
+
+  doctorProfile  Doctor?
+  patientProfile Patient?
+
+  @@index([role])
+}
+
+model Doctor {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  specialisation String
+  slotDurationMin Int     @default(30)
+  workingHours   Json     // e.g. { "MON": ["09:00","17:00"], "TUE": ["09:00","17:00"], ... }
+  createdAt      DateTime @default(now())
+
+  leaves       DoctorLeave[]
+  appointments Appointment[]
+
+  @@index([specialisation])
+}
+
+model DoctorLeave {
+  id        String   @id @default(uuid())
+  doctorId  String
+  doctor    Doctor   @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  date      DateTime @db.Date
+  reason    String?
+  createdAt DateTime @default(now())
+
+  @@unique([doctorId, date]) // a doctor can only mark a given date on leave once
+  @@index([doctorId, date])
+}
+
+model Patient {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dob       DateTime? @db.Date
+  gender    String?
+  createdAt DateTime @default(now())
+
+  appointments Appointment[]
+}
+
+// Core booking entity. Double-booking is prevented at the DB layer via the
+// unique constraint below PLUS a row-level advisory lock taken in the booking
+// transaction (see services/slotService.js). The unique constraint is the
+// final backstop even if two requests race past the application-level lock.
+model Appointment {
+  id          String            @id @default(uuid())
+  doctorId    String
+  doctor      Doctor            @relation(fields: [doctorId], references: [id])
+  patientId   String
+  patient     Patient           @relation(fields: [patientId], references: [id])
+  slotStart   DateTime          // exact start timestamp of the slot (UTC)
+  slotEnd     DateTime
+  status      AppointmentStatus @default(PENDING)
+
+  // Slot hold mechanism: PENDING appointments reserve the slot for a short
+  // window (see SLOT_HOLD_MINUTES) while the patient fills the symptom form.
+  // If not confirmed before holdExpiresAt, a background sweep releases it.
+  holdExpiresAt DateTime?
+
+  symptomText     String?
+  preVisitSummary Json?     // { urgencyLevel, chiefComplaint, suggestedQuestions[] }
+
+  doctorNotes      String?
+  prescription      Json?    // [{ medicine, dosage, frequencyPerDay, durationDays }]
+  postVisitSummary  String?  // LLM-generated patient-friendly text
+
+  googleEventIdPatient String?
+  googleEventIdDoctor  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  notifications Notification[]
+
+  // Final safety net against double-booking: no two non-cancelled
+  // appointments can occupy the same doctor + slotStart.
+  @@unique([doctorId, slotStart], name: "doctor_slot_unique")
+  @@index([patientId])
+  @@index([doctorId, slotStart])
+  @@index([status, holdExpiresAt])
+}
+
+// Every outbound email / calendar action is logged here so failures can be
+// retried by the background job instead of silently dropped.
+model Notification {
+  id            String              @id @default(uuid())
+  appointmentId String
+  appointment   Appointment         @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  recipientUserId String
+  channel       NotificationChannel
+  type          NotificationType
+  status        NotificationStatus  @default(PENDING)
+  attempts      Int                 @default(0)
+  lastError     String?
+  payload       Json?               // rendered subject/body or calendar event payload, for retry
+  scheduledFor  DateTime            @default(now()) // when it should fire (used for reminders)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@index([status, scheduledFor])
+  @@index([appointmentId])
+}
