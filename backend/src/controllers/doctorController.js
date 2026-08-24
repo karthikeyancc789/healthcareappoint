@@ -99,16 +99,36 @@ async function getDoctorProfile(userId) {
   return profile;
 }
 
-async function updateWorkingHours(req, res) {
-  const { doctorId } = req.params;
+/** PUT /doctor/me/working-hours — logged-in doctor updates their own schedule */
+async function updateMyWorkingHours(req, res) {
   const { workingHours } = req.body;
   if (!workingHours) throw new AppError('workingHours is required', 400);
-  // Ensure JSON string stored
   const updated = await prisma.doctor.update({
-    where: { id: Number(doctorId) },
+    where: { userId: req.user.id },   // userId is @unique on Doctor — no param needed
     data: { workingHours: JSON.stringify(workingHours) },
   });
   res.json({ doctor: updated });
 }
 
-module.exports = { myAppointments, getPreVisitSummary, submitVisitNotes, updateWorkingHours };
+/** PUT /doctor/:doctorId/working-hours — admin updates any doctor by explicit UUID */
+async function updateWorkingHours(req, res) {
+  const { doctorId } = req.params;
+  const { workingHours } = req.body;
+  if (!workingHours) throw new AppError('workingHours is required', 400);
+  const updated = await prisma.doctor.update({
+    where: { id: doctorId },
+    data: { workingHours: JSON.stringify(workingHours) },
+  });
+  res.json({ doctor: updated });
+}
+
+async function getMyProfile(req, res) {
+  const profile = await prisma.doctor.findUnique({
+    where: { userId: req.user.id },
+    include: { user: { select: { name: true, email: true } } },
+  });
+  if (!profile) throw new AppError('Doctor profile not found', 404);
+  res.json({ doctor: profile });
+}
+
+module.exports = { myAppointments, getPreVisitSummary, submitVisitNotes, updateMyWorkingHours, updateWorkingHours, getMyProfile };

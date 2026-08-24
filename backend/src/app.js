@@ -23,7 +23,7 @@ const corsOrigin =
     process.env.NODE_ENV === 'production'
         ? process.env.FRONTEND_URL
         : (origin, callback) => {
-            if (!origin || https ?: \/\/(localhost|127\.0\.0\.1):\d+$/.test(origin)) {
+            if (!origin || /^https?:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin)) {
                 return callback(null, true);
             }
             callback(new Error(`Not allowed by CORS: ${origin}`));

@@ -29,7 +29,10 @@ export default function SymptomForm() {
     setLoading(true);
     try {
       const { data } = await api.post(`/patient/appointments/${appointmentId}/symptoms`, { symptomText });
-      setSummary(data.appointment.preVisitSummary);
+      // preVisitSummary is stored as a JSON string in the DB — parse it before use
+      const raw = data.appointment.preVisitSummary;
+      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      setSummary(parsed);
       setStep('summary');
     } catch (err) {
       setError(err.response?.data?.error || 'Could not save symptoms. Your hold may have expired.');
@@ -94,13 +97,23 @@ export default function SymptomForm() {
         </div>
       )}
 
-      {step === 'summary' && summary && (
+      {step === 'summary' && (
         <div className="card">
           <h3 style={{ marginTop: 0 }}>Here's what we'll share with your doctor</h3>
-          <p style={{ color: 'var(--text-muted)' }}>{summary.chiefComplaint}</p>
-          <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-            Suggested questions you might ask: {summary.suggestedQuestions?.join(' · ')}
-          </p>
+          {summary?.chiefComplaint ? (
+            <>
+              <p style={{ color: 'var(--text-muted)' }}>{summary.chiefComplaint}</p>
+              {summary.suggestedQuestions?.length > 0 && (
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                  <strong>Questions to ask:</strong> {summary.suggestedQuestions.join(' · ')}
+                </p>
+              )}
+            </>
+          ) : (
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+              Your symptoms have been saved. The doctor will review them before your visit.
+            </p>
+          )}
           <button className="btn btn-primary" onClick={handleConfirm} disabled={loading}>
             {loading ? 'Confirming…' : 'Confirm appointment'}
           </button>

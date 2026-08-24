@@ -29,13 +29,8 @@ async function registerUser(req, res) {
       create: {
         specialisation,
         slotDurationMin: 30,
-        workingHours: JSON.stringify({
-          MON: ['09:00', '17:00'],
-          TUE: ['09:00', '17:00'],
-          WED: ['09:00', '17:00'],
-          THU: ['09:00', '17:00'],
-          FRI: ['09:00', '13:00'],
-        }),
+        // Empty schedule by default — doctor must configure via Working Hours page
+        workingHours: JSON.stringify({}),
       }
     };
   } else if (userRole === 'PATIENT') {

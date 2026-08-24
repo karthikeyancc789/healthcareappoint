@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5002/api',
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5003/api', // Updated to 5003
 });
 
 api.interceptors.request.use((config) => {
@@ -10,8 +10,6 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// On a 401 (expired/invalid token) drop the stale session and bounce to login,
-// rather than leaving the UI stuck showing forbidden data.
 api.interceptors.response.use(
   (res) => res,
   (err) => {

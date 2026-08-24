@@ -3,22 +3,21 @@ const logger = require('../config/logger');
 const { AppError } = require('../middleware/errorHandler');
 const emailService = require('./emailService');
 const calendarService = require('./calendarService');
+const { withLock } = require('../utils/mutex');
+const { parseJson } = require('../utils/json');
+const json = require('../utils/jsonHelper'); // Update to match your actual filename
 
 const SLOT_HOLD_MINUTES = Number(process.env.SLOT_HOLD_MINUTES || 10);
 const DAY_KEYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 
-/**
- * Computes candidate slots for a doctor on a given date from their
- * workingHours + slotDurationMin, then filters out slots that are already
- * booked/held or fall on a leave day.
- */
 async function getAvailableSlots(doctorId, dateStr) {
   const doctor = await prisma.doctor.findUnique({ where: { id: doctorId } });
   if (!doctor) throw new AppError('Doctor not found', 404);
 
   const date = new Date(`${dateStr}T00:00:00.000Z`);
   const dayKey = DAY_KEYS[date.getUTCDay()];
-  const hoursForDay = doctor.workingHours[dayKey];
+  const workingHours = parseJson(doctor.workingHours, {});
+  const hoursForDay = workingHours[dayKey];
   if (!hoursForDay) return []; // doctor doesn't work this day of week
 
   const onLeave = await prisma.doctorLeave.findUnique({
@@ -61,48 +60,44 @@ async function getAvailableSlots(doctorId, dateStr) {
 
 /**
  * Places a temporary hold on a slot (status PENDING) so the patient can fill
- * the symptom form without the slot being taken from under them. Uses a
- * Prisma interactive transaction with a Postgres advisory lock keyed on
- * (doctorId, slotStart) so two simultaneous requests for the *same* slot
- * are serialized — the second one fails fast with a 409 instead of both
- * racing to insert. The unique constraint on (doctorId, slotStart) is the
- * final backstop even if the advisory lock is somehow bypassed.
+ * the symptom form without the slot being taken from under them. Serializes
+ * concurrent requests for the *same* slot via an in-process mutex keyed on
+ * (doctorId, slotStart) — the second one fails fast with a 409 instead of
+ * both racing to insert. The unique constraint on (doctorId, slotStart) is
+ * the final backstop even if the in-process lock is somehow bypassed (e.g.
+ * multiple server instances).
  */
 async function holdSlot({ doctorId, patientId, slotStart, slotEnd }) {
   const start = new Date(slotStart);
   const end = new Date(slotEnd);
   const holdExpiresAt = new Date(Date.now() + SLOT_HOLD_MINUTES * 60000);
+  const lockKey = `${doctorId}:${start.toISOString()}`;
 
-  return prisma.$transaction(async (tx) => {
-    // Advisory lock: hashtext() gives a stable int from the string key.
-    // pg_advisory_xact_lock auto-releases at transaction end (commit or rollback).
-    await tx.$executeRawUnsafe(
-      `SELECT pg_advisory_xact_lock(hashtext($1))`,
-      `${doctorId}:${start.toISOString()}`
-    );
-
-    const now = new Date();
-    const existing = await tx.appointment.findUnique({
-      where: { doctor_slot_unique: { doctorId, slotStart: start } },
-    });
-
-    if (existing && (existing.status === 'CONFIRMED' || (existing.status === 'PENDING' && existing.holdExpiresAt > now))) {
-      throw new AppError('This slot is no longer available. Please choose another.', 409);
-    }
-
-    if (existing) {
-      // A previous hold expired — reuse the row instead of violating the
-      // unique constraint with a fresh insert.
-      return tx.appointment.update({
-        where: { id: existing.id },
-        data: { patientId, status: 'PENDING', holdExpiresAt, slotEnd: end, symptomText: null, preVisitSummary: null },
+  return withLock(lockKey, () =>
+    prisma.$transaction(async (tx) => {
+      const now = new Date();
+      const existing = await tx.appointment.findUnique({
+        where: { doctor_slot_unique: { doctorId, slotStart: start } },
       });
-    }
 
-    return tx.appointment.create({
-      data: { doctorId, patientId, slotStart: start, slotEnd: end, status: 'PENDING', holdExpiresAt },
-    });
-  });
+      if (existing && (existing.status === 'CONFIRMED' || (existing.status === 'PENDING' && existing.holdExpiresAt > now))) {
+        throw new AppError('This slot is no longer available. Please choose another.', 409);
+      }
+
+      if (existing) {
+        // A previous hold expired — reuse the row instead of violating the
+        // unique constraint with a fresh insert.
+        return tx.appointment.update({
+          where: { id: existing.id },
+          data: { patientId, status: 'PENDING', holdExpiresAt, slotEnd: end, symptomText: null, preVisitSummary: null },
+        });
+      }
+
+      return tx.appointment.create({
+        data: { doctorId, patientId, slotStart: start, slotEnd: end, status: 'PENDING', holdExpiresAt },
+      });
+    })
+  );
 }
 
 /**

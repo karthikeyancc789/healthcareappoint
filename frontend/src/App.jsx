@@ -11,6 +11,7 @@ import SymptomForm from './pages/patient/SymptomForm';
 import MyAppointments from './pages/patient/MyAppointments';
 
 import DoctorDashboard from './pages/doctor/DoctorDashboard';
+import WorkingHours from './pages/doctor/WorkingHours';
 
 import AdminDashboard from './pages/admin/AdminDashboard';
 
@@ -27,6 +28,7 @@ export default function App() {
       <Route path="/patient/appointments" element={<ProtectedRoute role="PATIENT"><MyAppointments /></ProtectedRoute>} />
 
       <Route path="/doctor" element={<ProtectedRoute role="DOCTOR"><DoctorDashboard /></ProtectedRoute>} />
+      <Route path="/doctor/working-hours" element={<ProtectedRoute role="DOCTOR"><WorkingHours /></ProtectedRoute>} />
 
       <Route path="/admin" element={<ProtectedRoute role="ADMIN"><AdminDashboard /></ProtectedRoute>} />
 

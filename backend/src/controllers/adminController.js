@@ -2,6 +2,7 @@ const prisma = require('../config/prisma');
 const { hashPassword } = require('../utils/authUtils');
 const { AppError } = require('../middleware/errorHandler');
 const slotService = require('../services/slotService');
+const { stringifyJson } = require('../utils/json');
 
 /** Admin creates a doctor account + profile in one step. */
 async function createDoctor(req, res) {
@@ -25,7 +26,7 @@ async function createDoctor(req, res) {
         create: {
           specialisation,
           slotDurationMin: slotDurationMin || 30,
-          workingHours, // e.g. { "MON": ["09:00","17:00"], ... }
+          workingHours: stringifyJson(workingHours), // e.g. { "MON": ["09:00","17:00"], ... }
         },
       },
     },

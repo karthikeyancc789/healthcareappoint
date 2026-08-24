@@ -12,8 +12,9 @@ export default function WorkingHours() {
   // Load current schedule
   useEffect(() => {
     (async () => {
-      const { data } = await api.get('/doctor/profile'); // endpoint should return doctor with workingHours
-      setHours(JSON.parse(data.doctor.workingHours));
+      const { data } = await api.get('/doctor/profile');
+      const raw = data.doctor.workingHours;
+      setHours(typeof raw === 'string' ? JSON.parse(raw) : raw || {});
     })();
   }, []);
 
@@ -30,9 +31,7 @@ export default function WorkingHours() {
   const save = async () => {
     setLoading(true);
     try {
-      await api.put(`/doctor/${/* doctorId */ ''}`, {
-        workingHours: hours,
-      });
+      await api.put('/doctor/me/working-hours', { workingHours: hours });
       setMsg('Schedule saved!');
     } catch (e) {
       setMsg(e.response?.data?.error || 'Save failed');
